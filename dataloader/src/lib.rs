@@ -1,8 +1,5 @@
 use memmap::Mmap;
-use numpy::{
-    ndarray::{ArrayBase, Dim, ViewRepr},
-    PyReadwriteArray2,
-};
+use numpy::ndarray::{ArrayBase, Dim, ViewRepr};
 use pyo3::prelude::*;
 use std::fs::File;
 
@@ -16,12 +13,16 @@ use std::fs::File;
  * byte    0-255 11111111
  * minute  0-60  11111100
  * unused  0     00000011
+ * 
+ * 3rd byte, various tags
+ * 
+ * 4th byte, log_1.15(traffic bytes)
  */
 
 
 // EXP_TABLE is a lookup table to compute 1.15**X where X is an integer in (0, 255)
 #[rustfmt::skip] 
-const EXP_TABLE: [f32; 256] = [
+const EXP_TABLE: [f64; 256] = [
     1.0,                1.15,               1.3224999999999998, 1.5208749999999998, 1.7490062499999994,
     2.0113571874999994, 2.313060765624999,  2.6600198804687487, 3.0590228625390607, 3.5178762919199196, 4.045557735707907,
     4.652391396064092,  5.350250105473706,  6.152787621294761,  7.075705764488975,  8.137061629162321,  9.357620873536668,
@@ -67,7 +68,7 @@ const EXP_TABLE: [f32; 256] = [
     1718533208522707.5, 1976313189801113.5, 2272760168271280.5, 2613674193511972.0, 3005725322538767.5,
 ];
 
-type MutableWeek<'a> = ArrayBase<ViewRepr<&'a mut f32>, Dim<[usize; 2]>>;
+type MutableWeek<'a> = ArrayBase<ViewRepr<&'a mut f64>, Dim<[usize; 2]>>;
 
 fn do_rasterize(mut array: MutableWeek, samples: usize, data: Mmap) {
     for i in (0..data.len()).step_by(4) {
@@ -79,7 +80,7 @@ fn do_rasterize(mut array: MutableWeek, samples: usize, data: Mmap) {
 }
 
 #[pyfunction]
-fn rasterize_week(mut array: PyReadwriteArray2<f32>, path: &str) -> PyResult<()> {
+fn rasterize_week(mut array: numpy::PyReadwriteArray2<f64>, path: &str) -> PyResult<()> {
     let f = File::open(path)?;
     let data = unsafe { Mmap::map(&f)? };
     let dims = array.dims();
