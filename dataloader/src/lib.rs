@@ -1,7 +1,15 @@
 use memmap::Mmap;
-use numpy::ndarray::{ArrayBase, Dim, ViewRepr};
-use pyo3::prelude::*;
+use ndarray::{ArrayBase, Dim, ViewRepr};
 use std::fs::File;
+use std::io;
+
+#[cfg(feature = "py")]
+mod py;
+
+#[cfg(feature = "go")]
+mod go;
+
+type Float = f32;
 
 /**
  * 1st byte
@@ -22,7 +30,7 @@ use std::fs::File;
 
 // EXP_TABLE is a lookup table to compute 1.15**X where X is an integer in (0, 255)
 #[rustfmt::skip] 
-const EXP_TABLE: [f64; 256] = [
+const EXP_TABLE: [Float; 256] = [
     1.0,                1.15,               1.3224999999999998, 1.5208749999999998, 1.7490062499999994,
     2.0113571874999994, 2.313060765624999,  2.6600198804687487, 3.0590228625390607, 3.5178762919199196, 4.045557735707907,
     4.652391396064092,  5.350250105473706,  6.152787621294761,  7.075705764488975,  8.137061629162321,  9.357620873536668,
@@ -68,28 +76,20 @@ const EXP_TABLE: [f64; 256] = [
     1718533208522707.5, 1976313189801113.5, 2272760168271280.5, 2613674193511972.0, 3005725322538767.5,
 ];
 
-type MutableWeek<'a> = ArrayBase<ViewRepr<&'a mut f64>, Dim<[usize; 2]>>;
+type MutableWeek<'a> = ArrayBase<ViewRepr<&'a mut Float>, Dim<[usize; 2]>>;
 
-fn do_rasterize(mut array: MutableWeek, samples: usize, data: Mmap) {
+fn open_data_file(path: &str) -> io::Result<Mmap> {
+    let f = File::open(path)?;
+    unsafe { Mmap::map(&f) }
+}
+
+fn graph_traffic(mut array: MutableWeek, samples: usize, path: &str) -> io::Result<()> {
+    let data = open_data_file(path)?;
     for i in (0..data.len()).step_by(4) {
         let day = (data[i] >> 5) as usize;
         let minute = ((data[i] & 0x1F) as usize * 60) + (data[i + 1] >> 2) as usize;
         let sample = minute * samples / (24 * 60);
         array[(day, sample)] += EXP_TABLE[data[i + 3] as usize];
     }
-}
-
-#[pyfunction]
-fn rasterize_week(mut array: numpy::PyReadwriteArray2<f64>, path: &str) -> PyResult<()> {
-    let f = File::open(path)?;
-    let data = unsafe { Mmap::map(&f)? };
-    let dims = array.dims();
-    do_rasterize(array.as_array_mut(), dims[1], data);
-    Ok(())
-}
-
-#[pymodule]
-fn dataloader(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(rasterize_week, m)?)?;
     Ok(())
 }
