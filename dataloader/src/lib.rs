@@ -93,3 +93,35 @@ fn graph_traffic(mut array: MutableWeek, samples: usize, path: &str) -> io::Resu
     }
     Ok(())
 }
+
+fn probability_of_traffic(
+    mut array: MutableWeek,
+    samples: usize,
+    path: &str,
+    threshold: f32,
+) -> io::Result<()> {
+    let data = open_data_file(path)?;
+    let mut sample_size = 0.;
+    let mut last = None;
+    for i in (0..data.len()).step_by(4) {
+        let day = (data[i] >> 5) as usize;
+        let minute = ((data[i] & 0x1F) as usize * 60) + (data[i + 1] >> 2) as usize;
+        let sample = minute * samples / (24 * 60);
+        if let Some(last_sample) = last {
+            if last_sample == sample {
+                if sample_size > threshold {
+                    // don't double count
+                    continue;
+                }
+            } else {
+                sample_size = 0.;
+            }
+        }
+        sample_size += EXP_TABLE[data[i + 3] as usize];
+        if sample_size > threshold {
+            array[(day, sample)] += 1.;
+        }
+        last = Some(sample);
+    }
+    Ok(())
+}
